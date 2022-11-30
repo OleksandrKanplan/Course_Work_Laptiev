@@ -1,1 +1,789 @@
-print(1)
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib
+import pandas as pd
+import seaborn as sns
+from collections import Counter
+from collections import OrderedDict
+import os
+from scipy import stats
+import missingno as msgn
+matplotlib.style.use('ggplot')
+
+%matplotlib inline
+import sklearn
+import warnings
+warnings.filterwarnings('ignore')
+from sklearn.preprocessing import label_binarize
+from sklearn.preprocessing import OrdinalEncoder, MinMaxScaler
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import StratifiedKFold
+#далее по мере необходимости будем импортировать другие библиотеки
+
+
+
+df = pd.read_csv('/Users/mac/Data/kurs/train_train.csv', low_memory=False)
+df_test = pd.read_csv('/Users/mac/Data/kurs/test.csv', low_memory=False) 
+
+
+display(df.head(20), print(), df_test.head(20))
+
+
+
+display(df.info(), print(), df_test.info())
+
+
+
+
+
+
+display(df.describe().T, print(), df_test.describe().T)
+
+
+
+
+
+display(df.describe(exclude=np.number).T, print(), df_test.describe(exclude=np.number).T)
+
+
+
+
+
+display(df.isna().sum() / df.shape[0]*100, print(), df_test.isna().sum() / df.shape[0]*100)
+
+
+
+
+
+
+display(msgn.matrix(df), print(), msgn.matrix(df_test))
+
+
+
+
+
+
+display(df.columns, print(), df_test.columns)
+
+
+
+
+
+
+display(df.select_dtypes('O').info(), print(), df_test.select_dtypes('O').info())
+
+
+
+
+
+obj_train = df.describe(include='O').columns
+obj_test = df_test.describe(include='O').columns
+
+
+
+
+
+for col in obj_train:
+    print('Column Name: '+col)
+    print("--"*20)
+    print(df[col].value_counts(dropna=False))
+    print('END', "//"*18, '\n')
+    
+    
+    
+    
+    
+#задаём нормальное отображение пропусков -> Nan, а так же очистка неправильного ввода данных
+
+df = df.applymap(lambda x: x if x is np.nan or not isinstance(x, str) else str(x).strip('_ ,"')).replace(['', 'nan', '!@9#%8', '#F%$D@*&8'], np.nan)
+
+df_test = df_test.applymap(lambda x: x if x is np.nan or not isinstance(x, str) else str(x).strip('_ ,"')).replace(['', 'nan', '!@9#%8', '#F%$D@*&8'], np.nan)
+
+#если значение Nan или не строка х = х, иначе переводим х в строку, удаляем "_,"" в начале и конце строки и заменяем пробелы, nan и прочие каракули на человеческий Nan
+
+
+
+
+display(df.isna().sum() / df.shape[0]*100, print(), df_test.isna().sum() / df.shape[0]*100)
+
+
+
+
+
+df.Num_of_Loan = df.Num_of_Loan.astype('int')
+df_test.Num_of_Loan = df_test.Num_of_Loan.astype('int')
+df.Annual_Income = df.Annual_Income.astype('float')
+df_test.Annual_Income = df_test.Annual_Income.astype('float')
+df.Monthly_Inhand_Salary = df.Monthly_Inhand_Salary.astype('float')
+df_test.Monthly_Inhand_Salary = df_test.Monthly_Inhand_Salary.astype('float')
+df.Amount_invested_monthly = df.Amount_invested_monthly.astype('float')
+df_test.Amount_invested_monthly = df_test.Amount_invested_monthly.astype('float')
+df.Num_of_Loan = df.Num_of_Loan.astype('int64')
+df_test.Num_of_Loan = df_test.Num_of_Loan.astype('int64')
+df.Num_of_Delayed_Payment = df.Num_of_Delayed_Payment.astype('float')
+df_test.Num_of_Delayed_Payment = df_test.Num_of_Delayed_Payment.astype('float')
+df.Changed_Credit_Limit = df.Changed_Credit_Limit.astype('float')
+df_test.Changed_Credit_Limit = df_test.Changed_Credit_Limit.astype('float')
+df.Outstanding_Debt = df.Outstanding_Debt.astype('float')
+df_test.Outstanding_Debt = df_test.Outstanding_Debt.astype('float')
+df.Monthly_Balance = df.Monthly_Balance.astype('float')
+df_test.Monthly_Balance = df_test.Monthly_Balance.astype('float')
+df.Age = df.Age.astype('int64')
+df_test.Age = df_test.Age.astype('int64')
+df.Month = pd.to_datetime(df.Month, format='%B').dt.month
+df_test.Month = pd.to_datetime(df_test.Month, format='%B').dt.month
+df.ID = df.ID.apply(lambda x: int(x, 16)) #перекодировали айдишник
+df_testID = df_test.ID.apply(lambda x: int(x, 16))
+df.Customer_ID = df.Customer_ID.apply(lambda x: int(x[4:], 16)) #тоже самое что и с айдишником, только для раскодировки необходимо начинать с 4 символа
+df_test.Customer_ID = df_test.Customer_ID.apply(lambda x: int(x[4:], 16))
+
+
+display(df.select_dtypes('O').info(), print(), df_test.select_dtypes('O').info())
+
+
+
+df.info()
+
+
+
+df.head(20)
+
+
+def year_to_month(i):
+    if pd.notnull(i):
+        year = int(i.split(' ')[0])
+        mon = int(i.split(' ')[3])
+      
+        return year*12+mon
+    else:
+        return i
+        
+        
+        
+df.Credit_History_Age = df.Credit_History_Age.apply(lambda i: year_to_month(i)).astype('float')
+df_test.Credit_History_Age = df_test.Credit_History_Age.apply(lambda i: year_to_month(i)).astype('float')
+
+
+
+#Смотрим на все значения
+index_train = df['Type_of_Loan'].notnull() # булев массив ненулевых значений
+index_test = df_test['Type_of_Loan'].notnull()
+
+b = list(df['Type_of_Loan'][index_train]) # список значений соответствующих True
+a = list(df_test['Type_of_Loan'][index_test])
+
+
+
+
+loan_type_dict_train = dict()
+for value in b:
+    values = value.split(',') #разбиваем строку на список, при этом указав разделитель, в нашем случае это запята
+    for each_value in values:
+        loan_type = each_value.strip(' ') #убрали пробелы в начале и конце строк
+        if 'and' in loan_type: 
+            loan_type = loan_type[4 : ] #если имеем and в нашем значении, то начинаем с 4-го символа строку, допустим у нас есть такое значение как "and Home Equity Loan" -> a - 0, n - 1, d - 2, ' ' - 3
+        if loan_type in loan_type_dict_train: #ну и если этот тип займа уже в нешаем словаре мы прибавляем 1 к кол-ву значений:
+            loan_type_dict_train[loan_type] += 1
+        else:
+            loan_type_dict_train[loan_type] = 1
+
+loan_type_dict_train
+
+
+
+
+
+display('TRAIN:', loan_type_dict_train, print(), 'TEST:', loan_type_dict_test)
+
+
+
+
+display(
+df.groupby('Customer_ID')['Name'].apply(list), 
+print(),
+df_test.groupby('Customer_ID')['Name'].apply(list)
+)
+
+
+
+
+def recovery_by_id(df, groupby, column, inplace=True):
+    result = df.groupby(groupby)[column].transform(lambda x: x.fillna(stats.mode(x)[0][0]))
+    if inplace:
+            df[column]=result
+    else:
+        return result
+
+recovery_by_id(df, "Customer_ID", "Name")
+recovery_by_id(df_test, "Customer_ID", "Name")
+
+recovery_by_id(df, "Customer_ID", "Occupation")
+recovery_by_id(df_test, "Customer_ID", "Occupation")
+
+recovery_by_id(df, "Customer_ID", "Credit_Mix")
+recovery_by_id(df_test, "Customer_ID", "Credit_Mix")
+
+recovery_by_id(df, "Customer_ID", "Payment_Behaviour")
+recovery_by_id(df_test, "Customer_ID", "Payment_Behaviour")
+
+
+
+
+df.head(20)
+
+
+
+
+
+display(df.groupby('Customer_ID')['Age'].apply(list)[:20], print(),
+df_test.groupby('Customer_ID')['Age'].apply(list)[:20])
+
+
+
+
+numercial_cols = [col for col in df.columns if (df[col].dtype == 'int64') | (df[col].dtype == 'float64')]
+
+for x in list(numercial_cols):
+    q75,q25 = np.percentile(df.loc[:,x],[75,25])
+    iqr = q75-q25
+    max = q75+(1.5*iqr)
+    min = q25-(1.5*iqr)
+    df.loc[df[x] < min,x] = np.nan
+    df.loc[df[x] > max,x] = np.nan
+    
+    
+#таблица с столбцами с пропусками
+
+missing = df.isnull().sum()
+missing = missing[missing>0]
+missing
+
+
+#тоже самое только с айди потребителя
+missing_cols = [col for col in missing.index]
+missing_cols.append('Customer_ID')
+missing_cols
+
+
+
+missing_cols_set = set(missing_cols)
+missing_cols_set
+
+
+
+#количественные переменные с пропусками
+numerical_cols_set = {col for col in df.columns if (df[col].dtype=='int64') | (df[col].dtype=='float64')}
+numerical_cols_missing = [col for col in numerical_cols_set.intersection(missing_cols_set)]
+numerical_cols_missing.append('Customer_ID')
+
+
+#можно/нельзя заполнить по айдишнику
+#если в 8 строках мы имеем одно уникальное значение -> based on customer id, иначе обратное.
+based_customer_ID = [col for col in numerical_cols_set if df[col].head(8).nunique() == 1]
+non_based_customer_ID = [col for col in numerical_cols_set if df[col].head(8).nunique() != 1]
+
+
+
+#группируем по возможности заполнять по айдишнику и заполняем медианным значением по группе(айди), иначе заполняем пропуски значением из следующей строки
+df[based_customer_ID] = df.groupby('Customer_ID')[based_customer_ID].transform('median')
+df[non_based_customer_ID] = df[non_based_customer_ID].fillna(method='bfill')
+
+
+
+
+df.isna().sum()
+
+df.Credit_Score.value_counts()
+
+
+plt.figure(figsize=(15, 10))
+c_s = df['Credit_Score'].value_counts(normalize=True).mul(100)
+sns.barplot(x=c_s.index, y=c_s.values)
+plt.title('Default')
+
+
+
+plt.figure(figsize=(15, 15))
+sns.displot(
+    {'Good': df[df.Credit_Score == 'Good'].Age, 
+     'Poor': df[df.Credit_Score == 'Poor'].Age,
+     'Standard': df[df.Credit_Score == 'Standard'].Age
+    },
+    kind='kde',
+    common_norm=False
+)
+
+plt.title('Age-Score', fontsize=20)
+plt.xlabel('Age', fontsize=16)
+plt.ylabel('Dentsity', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+df.groupby('Credit_Score')['Age'].median()
+
+
+
+df_age = df.copy()
+df_age.Age = np.log(df.Age+1)
+
+
+
+plt.figure(figsize=(15, 15))
+sns.displot(
+    {'Good': df_age[df_age.Credit_Score == 'Good'].Age, 
+     'Poor': df_age[df_age.Credit_Score == 'Poor'].Age,
+     'Standard': df_age[df_age.Credit_Score == 'Standard'].Age
+    },
+    kind='kde',
+    common_norm=False
+)
+
+plt.title('Age-Score', fontsize=20)
+plt.xlabel('Age', fontsize=16)
+plt.ylabel('Dentsity', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+
+plt.figure(figsize=(15, 10))
+sns.boxplot(x='Credit_Score', y='Age', data=df)
+
+plt.title('Age-Score', fontsize=20)
+plt.xlabel('Credit_Score', fontsize=16)
+plt.ylabel('Age', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+plt.figure(figsize=(20, 20))
+sns.boxplot(x='Occupation', y='Age', hue='Credit_Score', data=df)
+
+plt.title('Age-Occupation-Score', fontsize=20)
+plt.xlabel('Credit_Score', fontsize=16)
+plt.ylabel('Age', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+
+plt.figure(figsize=(25, 25))
+
+occup_def = (
+    df.groupby(['Credit_Score'])['Occupation']
+    .value_counts(normalize=True)
+    .rename('Percent')
+    .mul(100)
+    .reset_index()
+    .sort_values('Occupation')
+)
+
+sns.barplot(x='Occupation', y='Percent', hue='Credit_Score', data=occup_def)
+
+plt.title('Occupation-Score', fontsize=25)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=22)
+
+plt.xlabel('Occupation', fontsize=22, fontweight='bold')
+plt.ylabel('Percent', fontsize=22, fontweight='bold')
+plt.legend(fontsize=20)
+
+
+
+plt.figure(figsize=(18, 18))
+occup = df['Occupation'].value_counts()
+sns.barplot(x=occup.index, y=occup.values)
+
+
+
+plt.figure(figsize=(15, 15))
+sns.displot(
+    {'Good': df[df.Credit_Score == 'Good'].Monthly_Inhand_Salary,
+     'Poor': df[df.Credit_Score == 'Poor'].Monthly_Inhand_Salary,
+     'Standard': df[df.Credit_Score == 'Standard'].Monthly_Inhand_Salary},
+    kind='kde',
+    common_norm=False
+)
+
+plt.title('MIS-Score', fontsize=20)
+plt.xlabel('MIS', fontsize=16)
+plt.ylabel('Dentsity', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)    
+
+
+
+
+
+plt.figure(figsize=(20, 20))
+
+sns.barplot(x=list(loan_type_dict_train.keys()), y=list(loan_type_dict_train.values()))
+
+plt.title('Loan Type Distribution', fontsize=20)
+plt.xlabel('Loan Type', fontsize=16, fontweight='bold')
+plt.ylabel('Count', fontsize=16, fontweight='bold')
+
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+
+
+
+
+
+df.Payment_Behaviour.value_counts()
+
+
+PB = df.Payment_Behaviour.value_counts()
+
+plt.figure(figsize=(20, 20))
+sns.barplot(x=PB.index, y=PB.values)
+
+plt.title('Payment Behaviour', fontsize=20)
+plt.xlabel('Pattern', fontsize=14, fontweight='bold')
+plt.ylabel('Count', fontsize=14, fontweight='bold')
+
+
+
+
+
+plt.xticks(fontsize=10)
+plt.yticks(fontsize=14)
+
+
+
+
+plt.figure(figsize=(25, 25))
+
+occup_def = (
+    df.groupby(['Credit_Score'])['Payment_Behaviour']
+    .value_counts(normalize=True)
+    .rename('Percent')
+    .mul(100)
+    .reset_index()
+    .sort_values('Payment_Behaviour')
+)
+
+sns.barplot(x='Payment_Behaviour', y='Percent', hue='Credit_Score', data=occup_def)
+
+plt.title('P.Behaviour-Score-Score', fontsize=25)
+
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=22)
+
+plt.xlabel('Payment_Behaviour', fontsize=22, fontweight='bold')
+plt.ylabel('Percent', fontsize=22, fontweight='bold')
+plt.legend(fontsize=20)
+
+
+
+
+
+df.Credit_Mix.value_counts(normalize=True).mul(100)
+
+
+plt.figure(figsize=(20, 20))
+sns.factorplot('Credit_Mix', col = 'Credit_Score', data = df, kind = 'count', col_wrap = 3)
+
+
+
+
+PMA = df['Payment_of_Min_Amount'].value_counts(normalize=True).mul(100)
+plt.figure(figsize=(15, 15))
+sns.barplot(PMA.index, PMA.values)
+
+plt.title('Payment_of_Min_Amount', fontsize=20)
+plt.xlabel('Choice', fontsize=14, fontweight='bold')
+plt.ylabel('Percent', fontsize=14, fontweaight='bold')
+
+plt.xticks(fontsize=12)
+plt.yticks(fontsize=12)
+
+
+plt.figure(figsize=(20, 20))
+sns.factorplot('Payment_of_Min_Amount', col = 'Credit_Score', data = df, kind = 'count', col_wrap = 3)
+
+
+
+
+g = sns.FacetGrid(df, col = 'Credit_Score')
+g.map(sns.distplot, 'Outstanding_Debt')
+
+
+
+plt.figure(figsize=(15, 15))
+sns.displot(
+    {'Good': df[df.Credit_Score == 'Good'].Credit_History_Age, 
+     'Poor': df[df.Credit_Score == 'Poor'].Credit_History_Age,
+     'Standard': df[df.Credit_Score == 'Standard'].Credit_History_Age
+    },
+    kind='kde',
+    common_norm=False
+)
+
+plt.title('CHA-Score', fontsize=20)
+plt.xlabel('CHA', fontsize=16)
+plt.ylabel('Dentsity', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+
+
+df_CHA = df.copy()
+df_CHA.Credit_History_Age = np.log(df.Credit_History_Age+1)
+
+
+
+plt.figure(figsize=(15, 15))
+sns.displot(
+    {'Good': df_CHA[df_CHA.Credit_Score == 'Good'].Credit_History_Age, 
+     'Poor': df_CHA[df_CHA.Credit_Score == 'Poor'].Credit_History_Age,
+     'Standard': df_CHA[df_CHA.Credit_Score == 'Standard'].Credit_History_Age
+    },
+    kind='kde',
+    common_norm=False
+)
+
+plt.title('CHA-Score', fontsize=20)
+plt.xlabel('CHA', fontsize=16)
+plt.ylabel('Dentsity', fontsize=16)
+
+plt.xticks(fontsize=14)
+plt.yticks(fontsize=14)
+
+
+
+#удалить после EDA
+df.drop(['ID', 'Customer_ID', 'Name', 'SSN', 'Type_of_Loan'], axis = 1, inplace = True)
+
+
+
+#запустить после EDA
+df.dropna(inplace=True)
+
+
+df.isna().sum()
+
+
+msgn.matrix(df)
+
+
+
+
+
+df['Credit_Score'] = df['Credit_Score'].map({'Poor':0, 'Standard':1, 'Good':2})
+clean_df = df.copy()
+clean_df
+
+
+
+y = clean_df.Credit_Score
+X = clean_df.drop(columns=['Credit_Score'], axis=1)
+
+y
+
+
+
+
+cat_cols = [col for col in X.columns if X[col].dtype == 'object']
+cat_cols
+
+
+
+
+
+low_card = pd.get_dummies(X[['Credit_Mix', 'Payment_of_Min_Amount']])
+low_card
+
+
+
+order = OrdinalEncoder()
+high_card = pd.DataFrame(order.fit_transform(X[['Occupation', 'Payment_Behaviour']]), index=X[['Occupation', 'Payment_Behaviour']].index, columns = X[['Occupation', 'Payment_Behaviour']].columns)
+high_card
+
+
+
+#категориальные колонки
+cat_X = high_card.join(low_card)
+cat_X
+
+
+
+
+#список столбцов, которые являются числовыми
+num_col = [col for col in X.columns if (X[col].dtype == 'int64') | (X[col].dtype == 'float64')]
+X[num_col].head()
+
+
+#числовые колонки
+num_X = X[num_col]
+num_X
+
+
+
+cols_for_scaled = ['Annual_Income', 
+                   'Monthly_Inhand_Salary', 
+                   'Outstanding_Debt', 
+                   'Credit_Utilization_Ratio', 
+                   'Credit_History_Age', 
+                   'Total_EMI_per_month', 
+                   'Amount_invested_monthly',
+                   'Monthly_Balance']
+
+scaler = MinMaxScaler()
+num_scaled_X = pd.DataFrame(scaler.fit_transform(num_X[cols_for_scaled]), 
+                                  index=num_X[cols_for_scaled].index, 
+                                  columns=num_X[cols_for_scaled].columns)
+                                  
+                                  
+                                  
+num_X[cols_for_scaled] = num_scaled_X
+num_X
+
+
+
+
+
+F_X = num_X.join(cat_X)
+F_X
+
+
+
+
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import GridSearchCV
+
+
+
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split, StratifiedKFold
+RAND = 10
+from sklearn.metrics import recall_score, precision_score, f1_score, log_loss, auc, accuracy_score, roc_auc_score, roc_curve, classification_report
+
+
+X_train, X_test, y_train, y_test  = train_test_split(F_X, y, test_size=0.25, stratify=y, shuffle=True, random_state=RAND)
+
+
+lr = LogisticRegression(class_weight='balanced', multi_class='ovr') #one vs rest, сбалансированные классы
+lr.fit(X_train, y_train) # обучаем модель
+
+y_pred = lr.predict(X_test) # предиктим на тестовом множестве
+y_score = lr.predict_proba(X_test)# тоже самое только в вероятностном виде
+
+
+print('ROC-AUC Score: ', roc_auc_score(y_test, y_score, multi_class="ovr"))
+print('Recall: ', recall_score(y_test, y_pred, average='macro'))
+print('Accuracy: ', accuracy_score(y_test, y_pred))
+print('Precision: ', precision_score(y_test, y_pred, average='macro'))
+print('F1: ', f1_score(y_test, y_pred, average='macro'))
+print('Log-loss: ', log_loss(y_test, y_score))
+
+
+
+par_grid = {
+    
+    'penalty': ['l1', 'l2'],
+    'C': np.linspace(1, 1000, num=5),
+    'solver': ['sag', 'saga', 'lbfgs'],
+    'l1_ratio': [0.25, 0.5, 0.75],
+    'max_iter': np.arange(100, 500, 100)
+} #параметры для грид серча, который подбирает наилучшие параметры для модели
+
+lr = LogisticRegression(class_weight='balanced', multi_class='ovr') #one vs rest, сбалансированные классы
+cv = StratifiedKFold(n_splits=5, shuffle=True) #кросс-валидация
+grid_cv = GridSearchCV(lr, par_grid, scoring='roc_auc_ovr', cv=cv, verbose=10)
+#, 'lbfgs', 'elasticnet'
+
+
+
+
+#не советую запускать этот код, потому что он достаточно долго работает, у меня заняло 5 часов
+grid_cv.fit(X_train, y_train)
+
+
+print(grid_cv.best_score_)
+print(grid_cv.best_params_)
+
+
+
+best_par = {
+    'penalty': 'l2',
+    'C': 1,
+    'solver': 'lbfgs', 
+    'l1_ratio': 0.25,
+    'max_iter': 400
+}
+
+
+
+lr = LogisticRegression(**best_par, class_weight='balanced', multi_class='ovr') #one vs rest, сбалансированные классы
+lr.fit(X_train, y_train) # обучаем модель
+
+y_pred = lr.predict(X_test) # предиктим на тестовом множестве
+y_score = lr.predict_proba(X_test)# тоже самое только в вероятностном виде
+
+
+
+
+print('ROC-AUC Score: ', roc_auc_score(y_test, y_score, multi_class="ovr"))
+print('Recall: ', recall_score(y_test, y_pred, average='macro'))
+print('Accuracy: ', accuracy_score(y_test, y_pred))
+print('Precision: ', precision_score(y_test, y_pred, average='macro'))
+print('F1: ', f1_score(y_test, y_pred, average='macro'))
+print('Log-loss: ', log_loss(y_test, y_score))
+
+
+
+import xgboost as xgb
+xgb_model=xgb.XGBClassifier(max_depth=18, learning_rate=0.08, n_jobs=-1, objective='multi:softprob', num_class=3).fit(X_train, y_train)
+
+
+Y_PRED = xgb_model.predict(X_test)
+print(classification_report(y_test, Y_PRED))
+y_score1 = xgb_model.predict_proba(X_test)
+print('ROC-AUC Score: ', roc_auc_score(y_test, y_score1, multi_class="ovr"))
+
+
+
+fpr = {}
+tpr = {}
+thresh ={}
+
+n_class = 3
+
+for i in range(n_class):    
+    fpr[i], tpr[i], thresh[i] = roc_curve(y_test, y_score1[:,i], pos_label=i)
+    
+# plotting    
+plt.plot(fpr[0], tpr[0], linestyle='--',color='orange', label='Class 0 vs Rest')
+plt.plot(fpr[1], tpr[1], linestyle='--',color='green', label='Class 1 vs Rest')
+plt.plot(fpr[2], tpr[2], linestyle='--',color='blue', label='Class 2 vs Rest')
+plt.title('Multiclass ROC curve')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive rate')
+plt.legend(loc='best')
+plt.savefig('Multiclass ROC',dpi=300);
+
+
+
+
+from xgboost import plot_importance
+fig, ax = plt.subplots(figsize=(10,8))
+plot_importance(xgb_model, ax=ax)
+
+
+
